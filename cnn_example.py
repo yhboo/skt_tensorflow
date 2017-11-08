@@ -1,3 +1,6 @@
+import os
+#os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import numpy as np
 import tensorflow as tf
 import time
