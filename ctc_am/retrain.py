@@ -1,14 +1,14 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "3"
 os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 import numpy as np
 import time
 import tensorflow as tf
 
 
-from model import ctc_model
+from model import ctc_model_fixed
 from dataset import WSJDataSet
-from config import config
+from config import config_fixed
 
 def train(cfg):
 
@@ -35,12 +35,16 @@ def train(cfg):
     base_path = cfg['base_path']
     data_path = cfg['data_path']
     result_path = cfg['result_path']
+    pre_trained_path = cfg['pre_trained_path']
     model_name = cfg['model_name']
 
     result_file = result_path + model_name + '.ckpt'
 
     #rnn params
     clip_norm = cfg['clip_norm']
+
+    #quantization params
+    n_bits_dict = cfg['n_bits_dict']
 
     #internal args for early stopping
     cur_lr = initial_lr
@@ -56,7 +60,7 @@ def train(cfg):
 
     with tf.Graph().as_default():
         # graph construct
-        model = ctc_model(model_name)
+        model = ctc_model_fixed(model_name, n_bits_dict, pre_trained_path)
 
         #input for the graph
         with tf.variable_scope('PLACEHOLDER'):
@@ -70,6 +74,9 @@ def train(cfg):
         logit= model.get_logit(x, seq_len, phase)
         loss, cer = model.get_ctc_loss(logit, seq_len, y)
 
+        #initialize fixed_model
+        model.init_quantize()
+
         lr = tf.Variable(cur_lr, trainable=False)
         lr_update_op = tf.assign(lr, new_lr)
 
@@ -77,9 +84,11 @@ def train(cfg):
         opt = tf.train.AdamOptimizer(lr)
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
         with tf.control_dependencies(update_ops):
-            gradients, variables = zip(*opt.compute_gradients(loss))
+            gradients, _ = zip(*opt.compute_gradients(loss, model.params))
             gradients, _ = tf.clip_by_global_norm(gradients, clip_norm)
-            train_op = opt.apply_gradients(zip(gradients, variables))
+            train_op = opt.apply_gradients(zip(gradients, model.grad_storage))
+
+        quantize_op = model.quantize_op()
 
         #define saver
         saver = tf.train.Saver()
@@ -92,10 +101,17 @@ def train(cfg):
 
 
         #begin training
-        epoch = 70
+        epoch = 0
         with tf.Session() as sess:
             sess.run(tf.global_variables_initializer())
-            status = 'roll_back'
+
+            #load pre-trained params
+            model.load_all_params(sess)
+
+            #initial quantize(direct_quantize)
+            _ = sess.run(quantize_op)
+
+            status = 'keep_train'
 
             #curriculum learning control
             while epoch < max_epoch:
@@ -149,7 +165,7 @@ def train(cfg):
                     train_phase = True
 
                     while dataset.iter_flag():
-                        batch_x, batch_seq_len, sparse_indices, sparse_values, sparse_shape = dataset.get_data()
+                        batch_x, batch_seq_len, sparse_indices, sparse_values, sparse_shape, _ = dataset.get_data()
                         cur_loss, cur_cer, _ = sess.run(
                             [loss, cer, train_op],
                             feed_dict = {x : batch_x,
@@ -157,12 +173,13 @@ def train(cfg):
                                          y : (sparse_indices, sparse_values, sparse_shape),
                                          phase : train_phase}
                         )
+                        _ = sess.run(quantize_op)
                         if np.isnan(cur_loss):
                             status = 'roll_back'
                             epoch-=1
                             print('nan train err detected. epoch will be roll-backed')
                             break
-                        if cur_loss != np.inf:
+                        elif cur_loss != np.inf:
                             epoch_loss.append(cur_loss)
                         else:
                             #print('infinite loss for batch',dataset.counter-1)
@@ -190,7 +207,7 @@ def train(cfg):
                 with tf.name_scope('valid'):
                     train_phase = False
                     while dataset.iter_flag():
-                        batch_x, batch_seq_len, sparse_indices, sparse_values, sparse_shape = dataset.get_data()
+                        batch_x, batch_seq_len, sparse_indices, sparse_values, sparse_shape, _ = dataset.get_data()
                         cur_loss, cur_cer, = sess.run(
                             [loss, cer],
                             feed_dict={x: batch_x,
@@ -237,7 +254,7 @@ def train(cfg):
             with tf.name_scope('test'):
                 train_phase = False
                 while dataset.iter_flag():
-                    batch_x, batch_seq_len, sparse_indices, sparse_values, sparse_shape = dataset.get_data()
+                    batch_x, batch_seq_len, sparse_indices, sparse_values, sparse_shape, _ = dataset.get_data()
                     cur_loss, cur_cer, = sess.run(
                         [loss, cer],
                         feed_dict={x: batch_x,
@@ -260,7 +277,9 @@ def train(cfg):
         np.save(result_path + model_name + '_train_cer.npy', train_cer_hist)
         np.save(result_path + model_name + '_valid_loss.npy', valid_loss_hist)
         np.save(result_path + model_name + '_valid_cer.npy', valid_cer_hist)
+        model.save_all_params(sess, result_path)
+
 
 if __name__ == '__main__':
-    cfg = config()
+    cfg = config_fixed()
     train(cfg)

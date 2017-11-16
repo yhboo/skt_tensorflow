@@ -55,6 +55,7 @@ def evaluate(cfg):
     data_path = cfg['data_path']
     result_path = cfg['result_path']
     model_name = cfg['model_name']
+    save_path = 'results/variables/'
 
     result_file = result_path + model_name + '.ckpt'
 
@@ -109,6 +110,11 @@ def evaluate(cfg):
                     print(label_string[0][:-1] + ' <\s>')
                     print('predict : ')
                     print(greedy_decoding(predict, charset)+'\n')
+            #save model
+            model.save_params(sess, save_path)
+
+
+
         
 
 if __name__ == '__main__':
