@@ -68,15 +68,11 @@ def generate_wave(base_path, dst_path):
             dst_file = dst_path +wav_name
             if not os.path.exists(os.path.dirname(dst_file)):
                 os.makedirs(os.path.dirname(dst_file))
-            command = 'sph2pipe -f wav ' + base_path + path + ' ' + dst_file
+            command = './sph2pipe -f wav ' + base_path + path + ' ' + dst_file
             print('command : ', command)
-            print('wav_name: ', wav_name)
-            print('dst_file : ', dst_file)
-            print('label : ', train_all_label[id])
-            break
             subprocess.call(command, shell = True)
-            if counter > 100:
-                break
+            #if counter == 49:
+            #    break
             counter+=1
     
     counter = 0
@@ -94,15 +90,11 @@ def generate_wave(base_path, dst_path):
             dst_file = dst_path +wav_name
             if not os.path.exists(os.path.dirname(dst_file)):
                 os.makedirs(os.path.dirname(dst_file))
-            command = 'sph2pipe -f wav ' + base_path + path + ' ' + dst_file
+            command = './sph2pipe -f wav ' + base_path + path + ' ' + dst_file
             print('command : ', command)
-            print('wav_name: ', wav_name)
-            print('dst_file : ', dst_file)
-            print('label : ', eval_label[id])
-            break
             subprocess.call(command, shell = True)
-            if counter > 100:
-                break
+            #if counter == 49:
+            #    break
             counter+=1
 
     counter = 0
@@ -120,15 +112,11 @@ def generate_wave(base_path, dst_path):
             dst_file = dst_path +wav_name
             if not os.path.exists(os.path.dirname(dst_file)):
                 os.makedirs(os.path.dirname(dst_file))
-            command = 'sph2pipe -f wav ' + base_path + path + ' ' + dst_file
+            command = './sph2pipe -f wav ' + base_path + path + ' ' + dst_file
             print('command : ', command)
-            print('wav_name: ', wav_name)
-            print('dst_file : ', dst_file)
-            print('label : ', test_label[id])
-            break
             subprocess.call(command, shell = True)
-            if counter > 100:
-                break
+            #if counter == 49 :
+            #    break
             counter+=1
 
 
