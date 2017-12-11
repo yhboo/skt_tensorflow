@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.io import wavfile
-
-
+import sys, getopt
+import os
 
 
 
@@ -143,17 +143,28 @@ def get_data_x(base_path, file_name, fb):
 
 
 
-def get_mean_var(base_path, list_name, dst_name, fb_file = 'data/fb.npy'):
+def get_mean_var(base_path, list_name, dst_path, fb_file = 'data/fb.npy'):
     """
     this function saves mean and var tensor
     base_path : string, base file path
     list_name : string, list file that contains target file path
-    dst_name  : string, save file destination. dst_name_mean.py and dst_name_var.py will be created
+    dst_name  : string, save file destination. dst_path/mean.py and dst_path/var.py will be created
     """
     
-    fb = np.load(fb_file)
-    with open(base_path + list_name, 'r') as f:
-        list_lines = f.readlines()
+    try:
+        fb = np.load(fb_file)
+    except FileNotFoundError:
+        print("filter bank file should be in './data/fb.npy'")
+        raise NotImplementedError
+
+    try:
+        f = open(base_path + list_name, 'r')
+    except FileNotFoundError:
+        print('###########list "',list_name,'" is not exist. please check path')
+        raise NotImplementedError
+    
+    list_lines = f.readlines()
+    f.close()
 
 
     n_sum = np.zeros((3,40), dtype='float32')
@@ -167,9 +178,9 @@ def get_mean_var(base_path, list_name, dst_name, fb_file = 'data/fb.npy'):
     n_frame = 0
 
     for i in range(n_file):
-    #for i in range(15000,16000):
-        #print(i,'th')
         l = list_lines[i]
+        if l.find(' ') != -1:
+            l = l.split(' ')[1] #remove key
         wav_path = base_path + l[:-1]
         _, sig = wavfile.read(wav_path)
         feature, _ = extract_log_filter_bank(sig, fb)
@@ -180,11 +191,10 @@ def get_mean_var(base_path, list_name, dst_name, fb_file = 'data/fb.npy'):
         n_sum += np.sum(data, axis=1) / n_chunk
         n_square_sum += np.sum(np.multiply(data, data), axis=1) / n_chunk_square
         n_frame+=data.shape[1]
-        #print(data.shape)
-        #print(np.sum(data, axis=1))
 
         if(i % 1000 == 0):
             print('---------',i,'th----------- ')
+            print('check overflow...')
             print('sum')
             print('min : ', np.min(n_sum))
             print('max : ', np.max(n_sum))
@@ -197,15 +207,19 @@ def get_mean_var(base_path, list_name, dst_name, fb_file = 'data/fb.npy'):
     n_mean = n_sum / n_denom
     n_var = (n_square_sum / n_denom_square) - np.multiply(n_mean, n_mean)
 
-    print('----------final mean----------')
-    print(n_mean)
-    print('----------final var-----------')
-    print(n_var)
+    print('----------final mean nan check ----------')
+    print(np.sum(n_mean))
+    print('----------final var nan check-----------')
+    print(np.sum(n_var))
 
-    np.save(dst_name+'_mean.npy', n_mean)
-    np.save(dst_name+'_var.npy', n_var)
-    print('final result saved at ',dst_name)
-    
+    if not os.path.exists(os.path.dirname(dst_path)):
+        os.makedirs(os.path.dirname(dst_path))
+
+    np.save(dst_path+'mean.npy', n_mean)
+    np.save(dst_path+'var.npy', n_var)
+    print('final result saved at ',dst_path)
+
+
 def get_frame_list(base_path, list_name, trans_name, dst_name, fb_file = 'data/fb.npy'):
     fb = np.load(fb_file)
     with open(base_path + list_name, 'r') as f:
@@ -219,7 +233,7 @@ def get_frame_list(base_path, list_name, trans_name, dst_name, fb_file = 'data/f
     under_400 = []
     under_800 = []
     under_1200 = []
-
+    under_1600 = []
 
     #print('total file : ', n_file)
 
@@ -245,18 +259,24 @@ def get_frame_list(base_path, list_name, trans_name, dst_name, fb_file = 'data/f
         if n_frame < 1200 :
             under_1200.append(i)
 
+        if n_frame < 1600 :
+            under_1600.append(i)
+
     under_400 = np.asarray(under_400, dtype='int32')
     under_800 = np.asarray(under_800, dtype='int32')
     under_1200 = np.asarray(under_1200, dtype='int32')
+    under_1600 = np.asarray(under_1600, dtype='int32')
 
     np.save(dst_name+'_under_400.npy', under_400)
     np.save(dst_name + '_under_800.npy', under_800)
     np.save(dst_name + '_under_1200.npy', under_1200)
+    np.save(dst_name + '_under_1600.npy', under_1600)
 
     print('summary')
     print('n_under 400 :', under_400.shape)
     print('n_under 800 :', under_800.shape)
     print('n_under 1200 :', under_1200.shape)
+    print('n_under 1600 :', under_1600.shape)
 
 def check_valid_data(base_path, list_name, trans_name):
     with open(base_path + list_name, 'r') as f:
@@ -283,18 +303,159 @@ def check_valid_data(base_path, list_name, trans_name):
             err_list.append(i+1)
 
     print(err_list)
+
+
+def save_processed(base_path, dst_path):
+    fb = np.load('./data/fb.npy')
+    mean = np.load(base_path+'mean.npy').T
+    var = np.load(base_path+'var.npy').T
+    std =np.sqrt(var)
+
+
+    if not os.path.exists(os.path.dirname(dst_path)):
+        os.makedirs(os.path.dirname(dst_path))
+
+    with open(base_path + 'train_all_wav.trans', 'r') as f:
+        list_lines = f.readlines()
+    with open(dst_path + 'train_all_wav.trans', 'w') as f:
+        for l in list_lines:
+            f.write(l)
+    with open(base_path + 'test_dev93_wav.trans', 'r') as f:
+        list_lines = f.readlines()
+    with open(dst_path + 'test_dev93_wav.trans', 'w') as f:
+        for l in list_lines:
+            f.write(l)
+    with open(base_path + 'test_eval92_wav.trans', 'r') as f:
+        list_lines = f.readlines()
+    with open(dst_path + 'test_eval92_wav.trans', 'w') as f:
+        for l in list_lines:
+            f.write(l)
+
+
+
+    with open(base_path + 'train_all_wav.list', 'r') as f:
+        list_lines = f.readlines()
+
+    n_data = len(list_lines)
+    with open(dst_path + 'train_all_processed.list', 'w') as f:
+        for i in range(n_data):
+            l = list_lines[i]
+            l_name = l.split('.')[0]
+            new_name = l_name+'.npy'
+            f.write(new_name+l[-1])
+
+            _, sig = wavfile.read(base_path + l[:-1])
+            feature, _ = extract_log_filter_bank(sig, fb)
+            feature_delta = get_delta(feature, 2)
+            feature_delta_delta = get_delta(feature_delta, 2)
+            data = np.asarray([feature, feature_delta, feature_delta_delta], dtype='float32')
+            data = np.transpose(data, [1,2,0])
+            data = (data-mean)/std
+
+            new_file = dst_path + new_name
+            if not os.path.exists(os.path.dirname(new_file)):
+                os.makedirs(os.path.dirname(new_file))
+            np.save(new_file, data)
+
+            if(i%1000) == 0:
+                print(i,'th done')
+
+    with open(base_path + 'test_dev93_wav.list', 'r') as f:
+        list_lines = f.readlines()
+
+    n_data = len(list_lines)
+    with open(dst_path + 'test_dev93_processed.list', 'w') as f:
+        for i in range(n_data):
+            l = list_lines[i]
+            l_name = l.split('.')[0]
+            new_name = l_name+'.npy'
+            f.write(new_name+l[-1])
+
+            _, sig = wavfile.read(base_path + l[:-1])
+            feature, _ = extract_log_filter_bank(sig, fb)
+            feature_delta = get_delta(feature, 2)
+            feature_delta_delta = get_delta(feature_delta, 2)
+            data = np.asarray([feature, feature_delta, feature_delta_delta], dtype='float32')
+            data = np.transpose(data, [1,2,0])
+            data = (data-mean)/std
+
+            new_file = dst_path + new_name
+            if not os.path.exists(os.path.dirname(new_file)):
+                os.makedirs(os.path.dirname(new_file))
+            np.save(new_file, data)
+
+
+    with open(base_path + 'test_eval92_wav.list', 'r') as f:
+        list_lines = f.readlines()
+
+    n_data = len(list_lines)
+    with open(dst_path + 'test_eval92_processed.list', 'w') as f:
+        for i in range(n_data):
+            l = list_lines[i]
+            l_name = l.split('.')[0]
+            new_name = l_name+'.npy'
+            f.write(new_name+l[-1])
+
+            _, sig = wavfile.read(base_path + l[:-1])
+            feature, _ = extract_log_filter_bank(sig, fb)
+            feature_delta = get_delta(feature, 2)
+            feature_delta_delta = get_delta(feature_delta, 2)
+            data = np.asarray([feature, feature_delta, feature_delta_delta], dtype='float32')
+            data = np.transpose(data, [1,2,0])
+            data = (data-mean)/std
+
+            new_file = dst_path + new_name
+            if not os.path.exists(os.path.dirname(new_file)):
+                os.makedirs(os.path.dirname(new_file))
+            np.save(new_file, data)
+
+
+
 if __name__ == '__main__':
-    base_path = '/home/yhboo/skt/wavectrl/raw_wav/'
+    #base_path = '/home/yhboo/skt/wavectrl/raw_wav/'
     fb_file = './data/fb.npy'
-    list_name = 'train_all.list'
-    trans_name = 'train_all.trans'
+    
+    base_path = ""
+    list_name = "train_all_wav.list"
+    dst_path = ""
+    mode = ""
 
-    # list_name = 'test_eval92.list'
-    # trans_name = 'test_eval92.trans'
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], "hm:i:o:", ["mode=", "inPath=", "outPath="])
+    except getopt.GetoptError:
+        print('preprocessing.py -m <mode> -i <input_path> -o <output_path>')
+    for opt, arg in opts:
+        if opt == '-h':
+            print('preprocessing.py -m <mode> -i <input_path> -o <output_path>')
+            sys.exit()
+        elif opt in ("-m", "--mode"):
+            mode = arg
+        elif opt in ("-i", "--inPath"):
+            base_path = arg
+        elif opt in ("-o", "--outPath"):
+            dst_path = arg
 
-    dst_name = 'data/train_all_skip'
-    #get_mean_var(base_path, list_name, dst_name, fb_file)
-    get_frame_list(base_path, list_name, trans_name, dst_name, fb_file)
-    #check_valid_data(base_path, list_name, trans_name)
 
+    print('mode     : ', mode)
+    print('base path: ', base_path)
+    print('list file: ', list_name)
+    print('dst_path : ', dst_path)
+
+
+
+    if mode == 'meanvar':
+        if dst_path == "":
+            dst_path = base_path
+        get_mean_var(base_path, list_name, dst_path, fb_file)
+
+    elif mode == 'processed':
+        if dst_path == "":
+            dst_path = './data/data_example_processed/'
+        elif dst_path == base_path:
+            print('dst path should not be same with base_path!')
+            exit(0)
+        else:
+            save_processed(base_path, dst_path)
+    else:
+        raise NotImplementedError
 

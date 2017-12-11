@@ -101,7 +101,7 @@ class quantization_model(object):
             saved_path = path
 
         for pp in tf.global_variables():
-            if pp.name.find('_float') != -1 or pp.name.find('Adam') != -1 or pp.name.find('Variable') !=-1 or pp.name.find('lr') !=-1 or pp.name.find('power') !=-1:
+            if pp.name.find('_float') != -1 or pp.name.find('lr') != -1 or pp.name.find(self.opt_name) !=-1:
                 continue
             n_arr = pp.name.split('/')
             n = "_".join(n_arr) + '.npy'
@@ -115,6 +115,8 @@ class quantization_model(object):
 
     def save_all_params(self, sess, path):
         for pp in tf.global_variables():
+            if pp.name.find(self.opt_name) != -1 or pp.name.find('lr') != -1:
+                continue
             n_arr = pp.name.split('/')
             n = "_".join(n_arr) + '.npy'
             v = sess.run(pp)

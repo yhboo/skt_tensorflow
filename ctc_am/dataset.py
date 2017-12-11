@@ -3,6 +3,7 @@ import pickle
 
 from preprocessing import *
 from utils import *
+from scipy.io import wavfile
 
 
 class WSJDataSet(object):
@@ -13,47 +14,91 @@ class WSJDataSet(object):
     def __init__(self, batch_size, charset, base_path, data_path = './data/', preprocessed = True):
         self.processed = preprocessed
         if self.processed:
-            with open(base_path+'train_all_online.list', 'r') as f:
+            with open(base_path+'train_all_processed.list', 'r') as f:
                 self.train_list = f.readlines()
         else:
-            with open(base_path + 'train_all.list', 'r') as f:
+            with open(base_path + 'train_all_wav.list', 'r') as f:
                 self.train_list = f.readlines()
 
-        with open(base_path + 'train_all.trans', 'r') as f:
+        with open(base_path + 'train_all_wav.trans', 'r') as f:
             self.train_label = f.readlines()
 
         if self.processed:
-            with open(base_path + 'test_dev93_online.list', 'r') as f:
+            with open(base_path + 'test_dev93_processed.list', 'r') as f:
                 self.valid_list = f.readlines()
         else:
-            with open(base_path + 'test_dev93.list', 'r') as f:
+            with open(base_path + 'test_dev93_wav.list', 'r') as f:
                 self.valid_list = f.readlines()
 
-        with open(base_path + 'test_dev93.trans', 'r') as f:
+        with open(base_path + 'test_dev93_wav.trans', 'r') as f:
             self.valid_label = f.readlines()
 
         if self.processed:
-            with open(base_path + 'test_eval92_online.list', 'r') as f:
+            with open(base_path + 'test_eval92_processed.list', 'r') as f:
                 self.test_list = f.readlines()
         else:
-            with open(base_path + 'test_eval92.list', 'r') as f:
+            with open(base_path + 'test_eval92_wav.list', 'r') as f:
                 self.test_list = f.readlines()
 
-        with open(base_path + 'test_eval92.trans', 'r') as f:
+        with open(base_path + 'test_eval92_wav.trans', 'r') as f:
             self.test_label = f.readlines()
 
-        self.train_idx_under_400 = np.load(data_path + 'train_all_skip_under_400.npy')
-        self.train_idx_under_800 = np.load(data_path + 'train_all_skip_under_800.npy')
-        self.train_idx_under_1200 = np.load(data_path + 'train_all_skip_under_1200.npy')
 
-        self.mean = np.load(data_path + 'train_all_mean.npy').T
-        self.var = np.load(data_path + 'train_all_var.npy').T
-        self.std = np.sqrt(self.var)
-        self.fb = np.load(data_path + 'fb.npy')
+        train_idx_small = []
+        train_idx_mid = []
+        train_idx_big = []
+        train_idx_all = []
+        n_file = len(self.train_list) 
+
+        #print('total file : ', n_file)
+
+        for i in range(n_file):
+            l = self.train_list[i]
+            t = self.train_label[i]
+            if self.processed:
+                n_frame = np.load(base_path + l[:-1]).shape[0]
+                n_frame_compressed = np.ceil(n_frame/4).astype('int32')
+            else:
+                wav_path = base_path + l[:-1]
+                _, sig = wavfile.read(wav_path)
+
+                n_frame = 1 + np.floor((len(sig) - 400) / 160).astype('int32')
+                n_frame_compressed = np.ceil(n_frame/4).astype('int32')
+            if len(t) > n_frame_compressed:
+                print(i+1,'th sentence err')
+                continue
+
+            if n_frame < 400 :
+                train_idx_small.append(i)
+
+            if n_frame < 800 :
+                train_idx_mid.append(i)
+
+            if n_frame < 1200 :
+                train_idx_big.append(i)
+
+            if n_frame < 1600 :
+                train_idx_all.append(i)
+
+        self.train_idx_under_400 = np.asarray(train_idx_small, dtype='int32')
+        self.train_idx_under_800 = np.asarray(train_idx_mid, dtype='int32')
+        self.train_idx_under_1200 = np.asarray(train_idx_big, dtype='int32')
+        self.train_idx_under_1600 = np.asarray(train_idx_all, dtype='int32')
+        print('# of small dataset : ', self.train_idx_under_400.shape[0])
+        print('# of mid dataset : ', self.train_idx_under_800.shape[0])
+        print('# of big dataset : ', self.train_idx_under_1200.shape[0])
+        print('# of all dataset : ', self.train_idx_under_1600.shape[0])
+
+
+        if self.processed == False:
+            self.mean = np.load(base_path + 'mean.npy').T
+            self.var = np.load(base_path + 'var.npy').T
+            self.std = np.sqrt(self.var)
+            self.fb = np.load(data_path + 'fb.npy')
 
         self.base_path = base_path
 
-        self.mode = '' #mode : train_under_400, train_under_800, train_under_1200, train_all, valid, test
+        self.mode = '' #mode : train_under_400, train_under_800, train_under_1200, train_under_1600, train_all, valid, test
 
         self.counter = 0
 
@@ -88,6 +133,8 @@ class WSJDataSet(object):
             self.n_data = self.train_idx_under_400.shape[0]
         elif self.mode == 'train_under_1200':
             self.n_data = self.train_idx_under_1200.shape[0]
+        elif self.mode == 'train_under_1600':
+            self.n_data = self.train_idx_under_1600.shape[0]
         elif self.mode == 'train_all':
             self.n_data = len(self.train_list)
         elif self.mode == 'valid':
@@ -118,6 +165,8 @@ class WSJDataSet(object):
             data_idx = self.train_idx_under_800[data_idx]
         elif self.mode == 'train_under_1200':
             data_idx = self.train_idx_under_1200[data_idx]
+        elif self.mode == 'train_under_1600':
+            data_idx = self.train_idx_under_1600[data_idx]
         elif self.mode == 'train_all':
             pass
 

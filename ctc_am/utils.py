@@ -1,5 +1,31 @@
 import numpy as np
 
+def greedy_decoding(predict, charset):
+    predict = np.reshape(predict, (-1,))
+    T = predict.shape[0]
+    s = ""
+    idx_blank = 30
+    idx_eos = 29
+    l = [predict[0]]
+
+    #remove conjecutive labels
+    for t in range(1,T):
+        if predict[t] == l[-1]:
+            pass
+        else:
+            l.append(predict[t])
+
+    for t in range(len(l)):
+        if l[t] == idx_blank:
+            pass
+        elif l[t] == idx_eos:
+            s = s + ' <\s>'
+        else:
+            s = s + charset[l[t]]
+
+    return s
+
+
 def string_to_label(x, char_to_label_dict):
     """
     :param x: string or list of string 
@@ -49,12 +75,16 @@ def label_to_string(x, label_to_char_dict):
     return batch_sentence
 
 
-def WER(x, y):
+def WER(label, predict):
     """
-    x, y : list of words for one sentence
+    x, y : string for one sentence
+    x : label
+    y : predict
     output : wer
     """
 
+    x = label.split(' ')
+    y = predict.split(' ')
     d = np.zeros(((len(x) + 1), (len(y) + 1)), dtype='float32')
 
     for i in range(len(x) + 1):
@@ -72,7 +102,7 @@ def WER(x, y):
                 insert = d[i][j - 1] + 1
                 delete = d[i - 1][j] + 1
                 d[i][j] = min(substitute, insert, delete)
-    result = float((d[len(x)][len(y)]) / len(x)) * 100
+    result = float((d[len(x)][len(y)]) / len(x))
 
     return result
 

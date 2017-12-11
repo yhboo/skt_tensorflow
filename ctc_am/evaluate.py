@@ -8,32 +8,8 @@ import tensorflow as tf
 
 from model import ctc_model
 from dataset import WSJDataSet
-from config import config
-
-def greedy_decoding(predict, charset):
-    predict = np.reshape(predict, (-1,))
-    T = predict.shape[0]
-    s = ""
-    idx_blank = 30
-    idx_eos = 29
-    l = [predict[0]]
-
-    #remove conjecutive labels
-    for t in range(1,T):
-        if predict[t] == l[-1]:
-            pass
-        else:
-            l.append(predict[t])
-
-    for t in range(len(l)):
-        if l[t] == idx_blank:
-            pass
-        elif l[t] == idx_eos:
-            s = s + ' <\s>'
-        else:
-            s = s + charset[l[t]]
-
-    return s
+from config import config_fixed
+from utils import greedy_decoding
 
 
     
@@ -55,7 +31,7 @@ def evaluate(cfg):
     data_path = cfg['data_path']
     result_path = cfg['result_path']
     model_name = cfg['model_name']
-    save_path = 'results/variables/'
+    save_path = 'results/fixed_variables/'
 
     result_file = result_path + model_name + '.ckpt'
 
@@ -111,12 +87,15 @@ def evaluate(cfg):
                     print('predict : ')
                     print(greedy_decoding(predict, charset)+'\n')
             #save model
-            model.save_params(sess, save_path)
-
+            for pp in tf.global_variables():
+                n_arr = pp.name.split('/')
+                p_name = "_".join(n_arr) + '.npy'
+                v = sess.run(pp)
+                np.save(save_path + p_name, v)
 
 
         
 
 if __name__ == '__main__':
-    cfg = config()
+    cfg = config_fixed()
     evaluate(cfg)
